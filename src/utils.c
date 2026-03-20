@@ -70,7 +70,19 @@ uint8_t ip_prefix_match(uint8_t *ipa, uint8_t *ipb) {
  * @return uint16_t 校验和
  */
 uint16_t checksum16(uint16_t *data, size_t len) {
-    // TO-DO
+    uint32_t sum = 0;
+    while(len > 1){
+        sum += (*data);
+        data++;
+        len -= 2;
+    }
+    if(len == 1){
+        sum += *((uint8_t*)data);
+    }
+    while(sum >> 16){
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return (uint16_t)(~sum);
 }
 
 #pragma pack(1)
@@ -93,5 +105,31 @@ typedef struct peso_hdr {
  * @return uint16_t 计算得到的16位校验和
  */
 uint16_t transport_checksum(uint8_t protocol, buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
-    // TO-DO
+    
+    buf_add_header(buf,12);//添加udp伪头部
+ uint8_t temp_header[12];//暂存ip头部
+ memcpy(temp_header,buf->data,12);
+ memcpy(buf->data,src_ip,4);
+ memcpy(buf->data+4,dst_ip,4);
+  buf->data[8] = 0;
+    buf->data[9] = protocol;
+ uint16_t udp_length =swap16(buf->len - 12);  // 减去伪头部的长度
+    memcpy(buf->data + 10, &udp_length, 2);
+
+    int add_zero = buf->len % 2 == 1;//是否为奇数，如果是奇数则需要加1个0进行对齐，因为checksum需要16位对齐即两字节对齐
+   buf_add_padding(buf,add_zero);//填充0
+
+uint16_t checksum = checksum16((uint16_t *)buf->data, buf->len);
+
+// 恢复 IP 头部（恢复被覆盖的数据）
+    memcpy(buf->data, temp_header, 12);
+//去掉 UDP 伪头部
+    buf_remove_header(buf, 12);
+    if (add_zero==1)
+    {
+        buf_remove_padding(buf, 1);
+    }//把填充的0去掉
+    // Step7: 返回校验和值
+    return checksum;
+
 }

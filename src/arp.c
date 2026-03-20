@@ -57,7 +57,16 @@ void arp_print() {
  * @param target_ip 想要知道的目标的ip地址
  */
 void arp_req(uint8_t *target_ip) {
-    // TO-DO
+    buf_init(&txbuf,sizeof(arp_pkt_t));
+    arp_pkt_t* arp=(arp_pkt_t*)txbuf.data;
+
+    *arp = arp_init_pkt;
+  
+     arp->opcode16 = swap16(ARP_REQUEST);
+      memcpy(arp->target_ip, target_ip, NET_IP_LEN);
+      uint8_t broadcast_mac[NET_MAC_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+      ethernet_out(&txbuf,broadcast_mac,NET_PROTOCOL_ARP);
+
 }
 
 /**
@@ -67,7 +76,13 @@ void arp_req(uint8_t *target_ip) {
  * @param target_mac 目标mac地址
  */
 void arp_resp(uint8_t *target_ip, uint8_t *target_mac) {
-    // TO-DO
+    buf_init(&txbuf,sizeof(arp_pkt_t));
+     arp_pkt_t* arp=(arp_pkt_t*)txbuf.data;
+     *arp = arp_init_pkt;
+       arp->opcode16 = swap16(ARP_REPLY);
+       memcpy(arp->target_ip,target_ip,NET_IP_LEN);
+       memcpy(arp->target_mac,target_mac,NET_MAC_LEN);
+       ethernet_out(&txbuf,target_mac,NET_PROTOCOL_ARP);
 }
 
 /**
@@ -77,7 +92,36 @@ void arp_resp(uint8_t *target_ip, uint8_t *target_mac) {
  * @param src_mac 源mac地址
  */
 void arp_in(buf_t *buf, uint8_t *src_mac) {
-    // TO-DO
+    if(buf->len<sizeof(arp_pkt_t))
+    {
+        return;//数据长度小于apr头部长度，数据包不完整，丢弃
+    }
+    arp_pkt_t* arp=(arp_pkt_t*)buf->data;
+      // 检查ARP包的有效性
+    if (swap16(arp->hw_type16) != ARP_HW_ETHER || 
+        swap16(arp->pro_type16) != NET_PROTOCOL_IP ||
+        arp->hw_len != NET_MAC_LEN || 
+        arp->pro_len != NET_IP_LEN) {
+        return; // 无效的ARP包，丢弃
+    }
+  
+
+        map_set(&arp_table,arp->sender_ip,arp->sender_mac);
+        buf_t *cachedbuf=(buf_t*)map_get(&arp_buf,arp->sender_ip);
+        if(cachedbuf!=NULL)
+        {
+            ethernet_out(cachedbuf,arp->sender_mac,NET_PROTOCOL_IP);
+            map_delete(&arp_buf,arp->sender_ip);
+        }
+       
+            uint8_t targetip[NET_IP_LEN]=NET_IF_IP;
+              if(swap16(arp->opcode16)==ARP_REQUEST&&memcmp(arp->target_ip,targetip,NET_IP_LEN)==0)//判断接收到的报文是否为 ARP_REQUEST 请求报文，并且该请求报文的 target_ip 是本机的 IP
+              {
+                 arp_resp(arp->sender_ip,arp->sender_mac);
+              }
+
+   
+    
 }
 
 /**
@@ -88,7 +132,23 @@ void arp_in(buf_t *buf, uint8_t *src_mac) {
  * @param protocol 上层协议
  */
 void arp_out(buf_t *buf, uint8_t *ip) {
-    // TO-DO
+   uint8_t *mac=(uint8_t*)map_get(&arp_table,ip);
+    if(mac!=NULL)//找到对应的mac地址
+    {
+      ethernet_out(buf,mac,NET_PROTOCOL_IP);    
+    }
+    else//未找到
+    {
+       if(map_get(&arp_buf,ip)!=NULL){//arp_buf中有包在等待，避免重复
+          return;
+       }
+       
+       else{
+        map_set(&arp_buf,ip,buf);//将该包缓存进去
+        arp_req(ip);
+       }
+    }
+
 }
 
 /**

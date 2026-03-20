@@ -16,7 +16,50 @@ map_t udp_table;
  * @param src_ip 源ip地址
  */
 void udp_in(buf_t *buf, uint8_t *src_ip) {
-    // TO-DO
+
+   
+   
+    if(buf->len<sizeof(udp_hdr_t)) return;//太短，丢弃
+     udp_hdr_t* hdr=(udp_hdr_t*)buf->data;
+     uint16_t total_len = swap16(hdr->total_len16);
+     if(buf->len<total_len) return;//异常，丢弃
+
+     
+     uint16_t dst_port=swap16(hdr->dst_port16);
+     uint16_t checksum=hdr->checksum16;
+      hdr->checksum16 = 0; // 先将校验和字段置0
+    
+   
+     uint8_t * dst_ip=net_if_ip;//本机ip为目的ip
+
+
+
+ 
+    uint16_t sum= transport_checksum(NET_PROTOCOL_UDP,buf,src_ip,dst_ip);
+     
+ 
+
+     if(sum!=checksum) return;//校验和不一致，丢弃
+    hdr->checksum16=checksum;//恢复校验和 
+ 
+
+  udp_handler_t *handler = (udp_handler_t *)map_get(&udp_table, &dst_port);//查询处理函数
+
+     if(handler==NULL)
+     {
+        printf("find handler failed");
+        buf_add_header(buf,sizeof(ip_hdr_t));
+        icmp_unreachable(buf,src_ip,ICMP_CODE_PORT_UNREACH);
+     
+     }//没找到
+     else
+     {
+        printf("handler find");
+        buf_remove_header(buf,sizeof(udp_hdr_t));//去除报头
+        uint16_t src_port = swap16(hdr->src_port16);
+       (*handler)(buf->data,buf->len,src_ip,src_port);//调用该处理函数对数据进行相应的处理。
+
+     }
 }
 
 /**
@@ -28,7 +71,18 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
  * @param dst_port 目的端口号
  */
 void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port) {
-    // TO-DO
+ 
+   
+    buf_add_header(buf,sizeof(udp_hdr_t));
+   udp_hdr_t *hdr=(udp_hdr_t*)buf->data;
+   hdr->src_port16=swap16(src_port);
+   hdr->dst_port16=swap16(dst_port);
+    hdr->total_len16 = swap16(buf->len);
+   hdr->checksum16=0;
+   uint8_t *src_ip= net_if_ip;// 使用本机IP作为源IP
+
+   hdr->checksum16=transport_checksum(NET_PROTOCOL_UDP,buf,src_ip,dst_ip);
+   ip_out(buf,dst_ip,NET_PROTOCOL_UDP);
 }
 
 /**
@@ -73,4 +127,5 @@ void udp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip, u
     buf_init(&txbuf, len);
     memcpy(txbuf.data, data, len);
     udp_out(&txbuf, src_port, dst_ip, dst_port);
+    
 }

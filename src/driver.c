@@ -151,16 +151,20 @@ int driver_open() {
  * @return int 数据包的长度，未收到为0，错误为-1
  */
 int driver_recv(buf_t *buf) {
+    
     struct pcap_pkthdr *pkt_hdr;
     const uint8_t *pkt_data;
     int ret = pcap_next_ex(pcap, &pkt_hdr, &pkt_data);
-    if (ret == 0)
-        return 0;
+    if (ret == 0){
+        return 0;}
     else if (ret == 1) {
         memcpy(buf->data, pkt_data, pkt_hdr->len);
         buf->len = pkt_hdr->len;
+
+
         return pkt_hdr->len;
     }
+    
     fprintf(stderr, "Error in driver_recv.\n%s.\n", pcap_geterr(pcap));
     return -1;
 }
